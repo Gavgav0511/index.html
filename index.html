@@ -3,87 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart-АЗС: Оператор</title>
+    <title>Smart-АЗС Сканер</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --main-color: #248bed; }
-        body { font-family: sans-serif; padding: 20px; background: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); text-align: center; }
-        .container { display: flex; flex-direction: column; gap: 15px; }
-        .card { background: var(--tg-theme-secondary-bg-color); border-radius: 15px; padding: 20px; display: none; text-align: left; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .status-error { color: #d32f2f; font-weight: bold; margin: 10px 0; display: none; }
-        input { width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #ccc; box-sizing: border-box; font-size: 18px; margin-top: 10px; }
-        button { background: var(--main-color); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; width: 100%; font-size: 16px; cursor: pointer; }
-        .info-row { margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-        .info-label { font-size: 12px; color: #888; display: block; }
+        body { font-family: sans-serif; background: #000; color: #fff; text-align: center; padding: 15px; }
+        .card { background: #1c1c1e; border-radius: 15px; padding: 20px; margin-top: 15px; text-align: left; display: none; }
+        input { width: 100%; padding: 15px; margin: 10px 0; border-radius: 10px; border: none; font-size: 20px; background: #fff; color: #000; box-sizing: border-box; }
+        .btn-confirm { background: #34c759; color: #fff; width: 100%; padding: 15px; border-radius: 10px; font-weight: bold; border: none; font-size: 18px; cursor: pointer; }
+        .btn-scan { background: #007aff; color: #fff; width: 100%; padding: 15px; border-radius: 10px; font-weight: bold; border: none; margin-bottom: 10px; cursor: pointer; }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; background: #333; }
+        .label { color: #8e8e93; font-size: 12px; margin-top: 10px; }
+        .value { font-size: 22px; font-weight: bold; margin-bottom: 10px; color: #007aff; }
     </style>
 </head>
 <body>
     <h3>Smart-АЗС: Сканер</h3>
     
-    <div class="container">
-        <button id="scan-btn">🔍 СКАНИРОВАТЬ QR</button>
-        <p id="error-text" class="status-error">❌ ОШИБКА: Код не принадлежит системе Smart-АЗС</p>
-
-        <div id="result-card" class="card">
-            <div class="info-row">
-                <span class="info-label">Транспортное средство</span>
-                <strong id="v-model">Грузовик Scania</strong>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Госномер (сверьте при заправке!)</span>
-                <strong id="v-number">01 A 777 AA</strong>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Доступный лимит</span>
-                <strong id="v-limit">150 литров</strong>
-            </div>
-
-            <label for="liters-input">Введите заправленные литры:</label>
-            <input type="number" id="liters-input" placeholder="0.00" inputmode="decimal">
-            <button id="confirm-btn" style="margin-top: 15px; background: #4caf50;">ПОДТВЕРДИТЬ ВЫДАЧУ</button>
-        </div>
+    <div id="reader"></div>
+    <button id="scan_btn" class="btn-scan" onclick="startScan()">🔍 СКАНИРОВАТЬ QR</button>
+    
+    <div id="car_card" class="card">
+        <div class="label">ОТСКАНИРОВАННЫЙ КОД:</div>
+        <div id="display_id" class="value">---</div>
+        
+        <div class="label">ВВЕДИТЕ ЛИТРЫ:</div>
+        <input type="number" id="fuel_amount" placeholder="0.00" inputmode="decimal">
+        
+        <button class="btn-confirm" onclick="sendData()">ПОДТВЕРДИТЬ И ОТПРАВИТЬ</button>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.ready();
         tg.expand();
+        let scannedId = "";
 
-        const PREFIX = "SMART_AZS_ID_"; // Секретный префикс вашего ТЗ
+        // Создаем объект сканера
+        const html5QrCode = new Html5Qrcode("reader");
 
-        document.getElementById('scan-btn').onclick = () => {
-            tg.showScanQrPopup({ text: "Наведите на QR код машины" }, (data) => {
-                if (data.startsWith(PREFIX)) {
-                    // Если код верный
-                    document.getElementById('error-text').style.display = 'none';
-                    document.getElementById('result-card').style.display = 'block';
+        function startScan() {
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                config, 
+                (decodedText) => {
+                    // УСПЕХ: Мы получили текст из QR (например "10001")
+                    scannedId = decodedText;
                     
-                    // В реальной системе здесь будет запрос к Google Sheets через бота
-                    // Пока имитируем получение ID
-                    const vehicleId = data.replace(PREFIX, "");
-                    console.log("ID Машины в базе:", vehicleId);
-                } else {
-                    // Если код чужой
-                    document.getElementById('result-card').style.display = 'none';
-                    document.getElementById('error-text').style.display = 'block';
+                    // Выводим ID на экран
+                    document.getElementById('display_id').innerText = scannedId;
+                    
+                    // Показываем карточку ввода и прячем кнопку сканирования
+                    document.getElementById('car_card').style.display = "block";
+                    document.getElementById('scan_btn').style.display = "none";
+                    
+                    // Останавливаем камеру
+                    html5QrCode.stop().catch(err => console.error(err));
                 }
-                tg.closeScanQrPopup();
-                return true;
+            ).catch(err => {
+                alert("Ошибка камеры: " + err);
             });
-        };
+        }
 
-        document.getElementById('confirm-btn').onclick = () => {
-            const liters = document.getElementById('liters-input').value;
-            if (liters > 0) {
-                // Отправляем данные боту для записи в TRANSACTIONS [cite: 37]
-                tg.sendData(JSON.stringify({
-                    action: "fuel_done",
-                    amount: liters
-                }));
-            } else {
+        function sendData() {
+            const amount = document.getElementById('fuel_amount').value;
+            if (!amount || amount <= 0) {
                 alert("Введите количество литров!");
+                return;
             }
-        };
+
+            // Отправляем данные в Python-бот
+            const data = {
+                action: "fuel_done",
+                amount: amount,
+                qr_id: scannedId
+            };
+            
+            tg.sendData(JSON.stringify(data));
+        }
     </script>
 </body>
 </html>
