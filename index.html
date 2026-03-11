@@ -2,89 +2,94 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart-АЗС: Сканер</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>АЗС Сканер</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: sans-serif; background-color: #121212; color: white; text-align: center; margin: 0; padding: 20px; }
-        .container { max-width: 400px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        #reader { width: 100%; border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
-        .info-box { background: #2c2c2c; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
-        .car-data { color: #4CAF50; font-size: 1.2em; font-weight: bold; margin-bottom: 5px; }
-        .limit-data { color: #aaa; font-size: 0.9em; }
-        input { width: 80%; padding: 12px; border-radius: 8px; border: none; font-size: 1.1em; text-align: center; margin-bottom: 20px; }
-        button { width: 100%; padding: 15px; background: #4CAF50; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 1em; cursor: pointer; }
-        button:disabled { background: #555; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #000; color: white; margin: 0; padding: 15px; overflow: hidden; }
+        .app-card { background: #1c1c1e; border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; background: #000; }
+        /* Прячем лишние кнопки библиотеки */
+        #reader__dashboard, #reader span, #reader button { display: none !important; }
+        #reader__camera_selection { display: none !important; }
+        
+        .status-panel { margin-top: 20px; min-height: 80px; text-align: center; }
+        .car-info { color: #32d74b; font-size: 1.4em; font-weight: bold; margin-bottom: 5px; }
+        .limit-info { color: #8e8e93; font-size: 1em; }
+        
+        input { width: 100%; background: #2c2c2e; border: 1px solid #3a3a3c; border-radius: 12px; color: white; padding: 15px; box-sizing: border-box; font-size: 1.2em; text-align: center; margin-top: 20px; outline: none; }
+        input:focus { border-color: #32d74b; }
+        
+        #send-btn { width: 100%; background: #32d74b; color: black; border: none; border-radius: 12px; padding: 18px; font-size: 1.1em; font-weight: bold; margin-top: 15px; transition: 0.3s; opacity: 0.3; }
+        #send-btn.active { opacity: 1; transform: scale(1.02); }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h3>Smart-АЗС: Сканер</h3>
-    
+<div class="app-card">
     <div id="reader"></div>
 
-    <div class="info-box">
-        <div id="car-name" class="car-data">Отсканируйте код...</div>
-        <div id="car-limit" class="limit-data">ID: —</div>
+    <div class="status-panel">
+        <div id="car-name">Наведите на QR-код</div>
+        <div id="car-limit"></div>
     </div>
 
-    <input type="number" id="fuel-amount" placeholder="Введите литры" inputmode="decimal">
-    <button id="send-btn" disabled>ПОДТВЕРДИТЬ И ОТПРАВИТЬ</button>
+    <input type="number" id="fuel-amount" placeholder="Сколько литров?" inputmode="decimal">
+    <button id="send-btn" onclick="sendData()" disabled>ПОДТВЕРДИТЬ</button>
 </div>
 
 <script>
     const tg = window.Telegram.WebApp;
     tg.expand();
+    tg.ready();
 
-    let scannedCarId = null;
-    // СЮДА ВСТАВЬ ССЫЛКУ ИЗ GOOGLE APPS SCRIPT
-    const SCRIPT_URL = "ТВОЯ_ССЫЛКА_ИЗ_ШАГА_1"; 
+    let scannedId = null;
+    const SCRIPT_URL = "ТВОЯ_ССЫЛКА_ИЗ_APPS_SCRIPT"; // ЗАМЕНИ МЕНЯ!
 
-    function onScanSuccess(decodedText) {
-        scannedCarId = decodedText;
-        document.getElementById('car-name').innerText = "Поиск в базе...";
+    // Настройка сканера БЕЗ лишних кнопок
+    const html5QrCode = new Html5Qrcode("reader");
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
+        if (scannedId === decodedText) return; // Не сканировать одно и то же дважды
+        scannedId = decodedText;
         
-        // Запрос данных о машине
-        fetch(`${SCRIPT_URL}?id=${scannedCarId}`)
+        // Вибрация при успехе
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        
+        document.getElementById('car-name').innerText = "⚡ Проверка...";
+        
+        fetch(`${SCRIPT_URL}?id=${scannedId}`)
             .then(res => res.json())
             .then(data => {
                 if (data.status === "success") {
-                    document.getElementById('car-name').innerText = `${data.brand} (${data.plate})`;
-                    document.getElementById('car-limit').innerText = `Лимит: ${data.limit} л. | ID: ${scannedCarId}`;
-                    document.getElementById('send-btn').disabled = false;
+                    document.getElementById('car-name').innerHTML = `<div class="car-info">${data.brand}</div><div style="font-size:0.8em">${data.plate}</div>`;
+                    document.getElementById('car-limit').innerText = `Доступно: ${data.limit} л`;
+                    const btn = document.getElementById('send-btn');
+                    btn.disabled = false;
+                    btn.classList.add('active');
                 } else {
-                    document.getElementById('car-name').innerText = "❌ Машина не найдена";
-                    document.getElementById('car-limit').innerText = `ID: ${scannedCarId}`;
-                    document.getElementById('send-btn').disabled = true;
+                    document.getElementById('car-name').innerText = "❌ Не найдено";
+                    document.getElementById('car-limit').innerText = `ID: ${scannedId}`;
                 }
             })
             .catch(err => {
-                alert("Ошибка связи с таблицей");
-                console.error(err);
+                document.getElementById('car-name').innerText = "⚠ Ошибка сети";
             });
-    }
-
-    const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-    html5QrcodeScanner.render(onScanSuccess);
-
-    document.getElementById('send-btn').addEventListener('click', () => {
-        const amount = document.getElementById('fuel-amount').value;
-        if (!amount || amount <= 0) {
-            alert("Введите корректное количество литров");
-            return;
-        }
-
-        const result = {
-            action: "fuel_done",
-            amount: amount,
-            qr_id: scannedCarId
-        };
-
-        tg.sendData(JSON.stringify(result));
-        tg.close();
     });
+
+    function sendData() {
+        const amt = document.getElementById('fuel-amount').value;
+        if (!amt || amt <= 0) return alert("Введите литры");
+
+        tg.sendData(JSON.stringify({
+            action: "fuel_done",
+            amount: amt,
+            qr_id: scannedId
+        }));
+        tg.close();
+    }
 </script>
 
 </body>
