@@ -84,7 +84,6 @@
             border: 1px solid rgba(255,255,255,0.06);
         }
 
-        /* html5-qrcode ортиқча элементларини яшириш */
         #reader__dashboard,
         #reader span,
         #reader button {
@@ -305,11 +304,7 @@
         <div class="controls-card">
             <div class="block-title">Ёқилғи турини танланг</div>
 
-            <div class="fuel-grid">
-                <button class="fuel-btn" data-fuel="АИ-95" onclick="selectFuel('АИ-95')">АИ-95</button>
-                <button class="fuel-btn" data-fuel="АИ-92" onclick="selectFuel('АИ-92')">АИ-92</button>
-                <button class="fuel-btn" data-fuel="ДТ" onclick="selectFuel('ДТ')">ДТ</button>
-            </div>
+            <div class="fuel-grid" id="fuel-grid"></div>
 
             <div class="input-wrap">
                 <input
@@ -353,17 +348,22 @@
     tg.expand();
     tg.ready();
 
+    const params = new URLSearchParams(window.location.search);
+    const branchId = params.get("branch_id");
+
     let scannedId = null;
     let selectedFuel = null;
     let scannedVehicle = null;
+    let availableFuels = [];
 
-    // Бу ерга ўз Apps Script URL манзилингни қўй
+    // СЮДА ПОСТАВЬ СВОЙ APPS SCRIPT URL
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz0K2W5UVcOuaPlMSixvG4UYK_S60cO8LykxIzJkxVA_gQB6MELQCGPBNm4OD66u9zRhw/exec";
 
     const carNameEl = document.getElementById("car-name");
     const carDetailsEl = document.getElementById("car-details");
     const sendBtn = document.getElementById("send-btn");
     const litersInput = document.getElementById("fuel-amount");
+    const fuelGrid = document.getElementById("fuel-grid");
 
     const calcFuel = document.getElementById("calc-fuel");
     const calcPrice = document.getElementById("calc-price");
@@ -389,10 +389,9 @@
 
         carNameEl.innerText = "QR-кодни сканер қилинг";
         carDetailsEl.innerHTML = "";
-
-        document.querySelectorAll(".fuel-btn").forEach(btn => btn.classList.remove("active"));
         litersInput.value = "";
 
+        renderFuelButtons();
         updateCalc();
         updateSendButton();
     }
@@ -435,6 +434,14 @@
             </div>
         `;
 
+        if (Array.isArray(data.fuels)) {
+            availableFuels = data.fuels.filter(x => x && x.name);
+            if (!availableFuels.some(x => x.name === selectedFuel)) {
+                selectedFuel = null;
+            }
+            renderFuelButtons();
+        }
+
         updateCalc();
         updateSendButton();
     }
@@ -469,28 +476,35 @@
         updateSendButton();
     }
 
+    function renderFuelButtons() {
+        fuelGrid.innerHTML = "";
+
+        if (!availableFuels.length) {
+            fuelGrid.innerHTML = `<div class="error-text" style="grid-column: 1 / -1; text-align:center;">Ёқилғи турлари топилмади</div>`;
+            return;
+        }
+
+        availableFuels.forEach(fuel => {
+            const btn = document.createElement("button");
+            btn.className = "fuel-btn";
+            btn.dataset.fuel = fuel.name;
+            btn.type = "button";
+            btn.textContent = fuel.name;
+
+            if (fuel.name === selectedFuel) {
+                btn.classList.add("active");
+            }
+
+            btn.addEventListener("click", () => selectFuel(fuel.name));
+            fuelGrid.appendChild(btn);
+        });
+    }
+
     function getFuelPrice() {
-        if (!scannedVehicle || !selectedFuel) return null;
-
-        // 1) Агар Apps Script prices объект юборса
-        if (scannedVehicle.prices && typeof scannedVehicle.prices === "object") {
-            const p = scannedVehicle.prices[selectedFuel];
-            if (p !== undefined && p !== null && p !== "") return Number(p);
-        }
-
-        // 2) Агар fuels массив юборса
-        if (Array.isArray(scannedVehicle.fuels)) {
-            const found = scannedVehicle.fuels.find(x => String(x.name) === String(selectedFuel));
-            if (found && found.price !== undefined) return Number(found.price);
-        }
-
-        // 3) Агар алоҳида fuel_prices юборса
-        if (scannedVehicle.fuel_prices && typeof scannedVehicle.fuel_prices === "object") {
-            const p = scannedVehicle.fuel_prices[selectedFuel];
-            if (p !== undefined && p !== null && p !== "") return Number(p);
-        }
-
-        return null;
+        if (!selectedFuel || !availableFuels.length) return null;
+        const found = availableFuels.find(x => String(x.name) === String(selectedFuel));
+        if (!found) return null;
+        return Number(found.price);
     }
 
     function updateCalc() {
@@ -502,12 +516,7 @@
 
         if (price !== null && isFinite(price)) {
             calcPrice.textContent = formatMoney(price);
-
-            if (liters > 0) {
-                calcTotal.textContent = formatMoney(price * liters);
-            } else {
-                calcTotal.textContent = formatMoney(0);
-            }
+            calcTotal.textContent = liters > 0 ? formatMoney(price * liters) : formatMoney(0);
         } else {
             calcPrice.textContent = "Номаълум";
             calcTotal.textContent = liters > 0 ? "Бот ҳисоблайди" : "Номаълум";
@@ -546,6 +555,35 @@
         updateSendButton();
     });
 
+    async function loadBranchFuels() {
+        if (!branchId) {
+            fuelGrid.innerHTML = `<div class="error-text" style="grid-column: 1 / -1; text-align:center;">branch_id топилмади</div>`;
+            return;
+        }
+
+        try {
+            const res = await fetch(`${SCRIPT_URL}?action=fuels&branch_id=${encodeURIComponent(branchId)}`);
+            const data = await res.json();
+
+            if (data.status === "success" && Array.isArray(data.fuels)) {
+                availableFuels = data.fuels.filter(x => x && x.name);
+            } else {
+                availableFuels = [];
+            }
+
+            if (!availableFuels.some(x => x.name === selectedFuel)) {
+                selectedFuel = null;
+            }
+
+            renderFuelButtons();
+            updateCalc();
+            updateSendButton();
+        } catch (e) {
+            availableFuels = [];
+            renderFuelButtons();
+        }
+    }
+
     const html5QrCode = new Html5Qrcode("reader");
     const config = {
         fps: 10,
@@ -566,7 +604,7 @@
 
             setLoadingState();
 
-            fetch(`${SCRIPT_URL}?id=${encodeURIComponent(scannedId)}`)
+            fetch(`${SCRIPT_URL}?action=vehicle&id=${encodeURIComponent(scannedId)}&branch_id=${encodeURIComponent(branchId || "")}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === "success") {
@@ -604,12 +642,14 @@
             action: "fuel_done",
             qr_id: scannedId,
             liters: liters,
-            fuel_type: selectedFuel
+            fuel_type: selectedFuel,
+            branch_id: branchId || ""
         }));
 
         tg.close();
     }
 
+    loadBranchFuels();
     setIdleState();
 </script>
 
